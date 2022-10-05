@@ -25,48 +25,39 @@ namespace alg {
 		}
 
 	private:
-		double get_remesh_length(double& avg_length);
+		double get_remesh_length(const Eigen::Vector3d& dir,size_t sv, double r);
 
-		int  Deformer::get_remesh_patch(
-			double avg_length,
-			std::vector<int>& faces);
+		int get_remesh_patch(
+			const Eigen::Vector3d& dir,size_t sv, double r, 
+			double ext_ratio,std::vector<int>& faces);
 
 		int get_local_patch(size_t sv, double r);
 
-		int get_local_mapping(
-			Eigen::Matrix3Xd& limit_pos,
-			Eigen::Matrix3Xd& limit_lap);
+		int get_local_mapping(Eigen::Matrix3Xd& limit_pos, Eigen::Matrix3Xd& limit_lap);
 
-		int get_extend_patch(
-			Eigen::Matrix3Xd& lv,
-			Eigen::Matrix3Xi& lf,
-			std::vector<int>& l2g);
+		int get_extend_patch(Eigen::Matrix3Xd& lv, Eigen::Matrix3Xi& lf, std::vector<int>& l2g);
 
 		int get_mesh_from_vertex(
-			const Eigen::VectorXi& flag,
-			Eigen::Matrix3Xd& lv,
-			Eigen::Matrix3Xi& lf,
+			const Eigen::VectorXi& flag, 
+			Eigen::Matrix3Xd& lv, Eigen::Matrix3Xi& lf, 
 			std::vector<int>& l2g);
 
 		int Deformer::smooth_buffer_laplace(
-			const Eigen::Matrix3Xd& lv,
-			const Eigen::Matrix3Xi& lf,
-			const Eigen::SparseMatrix<double>& L,
-			const Eigen::Matrix3Xd& limit_lap,
-			const std::vector<int>& l2l,
-			Eigen::Matrix3Xd& laplace);
+			const Eigen::Matrix3Xd& lv,const Eigen::Matrix3Xi& lf,
+			const Eigen::SparseMatrix<double>& L,const Eigen::Matrix3Xd& limit_lap,
+			const std::vector<int>& l2l,Eigen::Matrix3Xd& laplace);
 
 	private: //data
 		Eigen::Matrix3Xd _v;
 		Eigen::Matrix3Xi _f;
 		Eigen::Matrix3Xd _n;
 		std::vector<std::vector<int>> _v_v;
-		alg::Remesher _remesher;
 
 		//cache data
 		size_t _source_v;
 		double _geo_radius;
 		double _ext_ratio;
+		double _target_length;
 
 		Eigen::Vector3d _direction;
 		Eigen::Vector3d _orth_direction;
@@ -81,7 +72,6 @@ namespace alg {
 		std::vector<int> _geo_r_l2g;
 
 	private:
-		void precompute();
 
 		int Deformer::build_linear_system(
 			const Eigen::Matrix3Xd& lv,
@@ -92,8 +82,7 @@ namespace alg {
 			const std::vector<int>& l2l,
 			Eigen::SparseMatrix<double>& A,
 			Eigen::VectorXd& b);
-		void buildAm();
-		void buildRhs();
+
 		Eigen::SimplicialLDLT<Eigen::SparseMatrix<double>>   _solver;
 
 	};

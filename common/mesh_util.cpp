@@ -70,6 +70,7 @@ namespace common {
         const Eigen::Matrix3Xi& F,
         std::vector<std::vector<int>>& v_v)
     {
+        v_v.clear();
         v_v.resize(F.maxCoeff() + 1);
         for (int i = 0; i < F.cols(); i++) {
             for (int j = 0; j < F.rows(); j++) {

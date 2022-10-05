@@ -5,7 +5,7 @@
 
 namespace alg {
 
-    void Remesher::isotropic_remeshing(
+    void isotropic_remeshing(
         const Eigen::Matrix3Xd& V,
         const Eigen::Matrix3Xi& F,
         const std::vector<int>& face_range,
@@ -16,12 +16,10 @@ namespace alg {
     {
         using namespace common;
 
+        Mesh mesh;
         mesh.reserve(V.cols(), V.cols() + F.cols() - 2, F.cols());
         for (int i = 0; i < V.cols(); ++i) {
             mesh.add_vertex(CGAL::Epick::Point_3(V(0, i), V(1, i), V(2, i)));
-        }
-        for (auto i: face_range) {
-            mesh.add_face(CGAL::SM_Vertex_index(F(0, i)), CGAL::SM_Vertex_index(F(1, i)), CGAL::SM_Vertex_index(F(2, i)));
         }
         for (int i = 0; i < F.cols(); ++i) {
             mesh.add_face(CGAL::SM_Vertex_index(F(0, i)), CGAL::SM_Vertex_index(F(1, i)), CGAL::SM_Vertex_index(F(2, i)));
@@ -29,35 +27,11 @@ namespace alg {
         
         CGAL::IO::write_OFF("../obj/1.off", mesh);
 
-        // give each vertex a name, the default is empty
-        Mesh::Property_map<edge_descriptor, bool> is_constrained =
-            mesh.add_property_map<edge_descriptor, bool>("e:is_constrained", false).first;
-
-        //detect sharp features
-        BOOST_FOREACH(edge_descriptor e, mesh.edges())
-        {
-            halfedge_descriptor hd = halfedge(e, mesh);
-            if (is_border(e, mesh))  continue;
-
-            double angle = CGAL::Mesh_3::dihedral_angle(
-                mesh.point(source(hd, mesh)),
-                mesh.point(target(hd, mesh)),
-                mesh.point(target(next(hd, mesh), mesh)),
-                mesh.point(target(next(opposite(hd, mesh), mesh), mesh)));
-            if (CGAL::abs(angle) < 100)
-                is_constrained[e] = true;
+        std::vector<Mesh::Face_index> range;
+        for (const auto& i : face_range) {
+            range.push_back(Mesh::Face_index(i));
         }
-
-        //remesh
-
-        Mesh::Face_range range(mesh.faces_begin(), mesh.faces_begin() + face_range.size());
-        PMP::isotropic_remeshing(
-            range,
-            target_edge_length,
-            mesh,
-            PMP::parameters::number_of_iterations(nb_iter)
-            .edge_is_constrained_map(is_constrained));
-
+        PMP::isotropic_remeshing(range,target_edge_length,mesh);
 
         CGAL::IO::write_OFF("../obj/2.off", mesh);
         mesh.collect_garbage();

@@ -12,15 +12,14 @@ namespace alg {
 		const Eigen::Vector3d& dir,
 		size_t sv, double r, double ext_ratio)
 	{
-		double avg_length;
-		double target_length = get_remesh_length(avg_length);
+		double target_length = get_remesh_length(dir, sv, r);
 
 		std::vector<int> range;
-		get_remesh_patch(avg_length, range);
+		get_remesh_patch(dir, sv, r, ext_ratio, range);
 
 		Eigen::Matrix3Xd re_v;
 		Eigen::Matrix3Xi re_f;
-		_remesher.isotropic_remeshing(_v, _f, range, target_length, 5, re_v, re_f);
+		alg::isotropic_remeshing(_v, _f, range, target_length, 5, re_v, re_f);
 		_v = re_v; _f = re_f;
 
 		common::get_mesh_vertex_normal(_v, _f, _n);
@@ -76,44 +75,50 @@ namespace alg {
 		return 1;
 	}
 
-	double Deformer::get_remesh_length(double& avg_length)
+	double Deformer::get_remesh_length(const Eigen::Vector3d& dir,size_t sv, double r)
 	{
-		//double avg = 0;
-		//for (const auto v : _v_v[_source_v]) {
-		//	avg += (_v.col(_source_v) - _v.col(v)).norm();
-		//}
-		//avg /= _v_v[_source_v].size();
-		//avg_length = avg;
-
-		return 0.02;
+		int count = 256 * dir.norm() * r;
+		_target_length = sqrt(4 * M_PI * r * r / (count * sqrt(3)));
+		return _target_length;
 	}
 
-	int  Deformer::get_remesh_patch(
-		double avg_length,
+	int  Deformer::get_remesh_patch	(
+		const Eigen::Vector3d& dir,
+		size_t sv, double r, double ext_ratio,
 		std::vector<int>& faces)
 	{
-		faces = std::vector<int>{ 20,21,22,23,25,26,27,84,85,86,87,89,90,91,
-		148,149,150,151,153,154,155,212,213,214,215,217,218,219 };
+		common::vertex_vertex_adjacency(_f, _v_v);
+		double avg_length = 0;
+		for (const auto v : _v_v[sv]) {
+			avg_length += (_v.col(sv) - _v.col(v)).norm();
+		}
+		avg_length /= _v_v[sv].size();
 
-		//double max_d = (1 + _ext_ratio) * _geo_radius;
-		//int max_level = max_d / avg_length;
+		double max_d = (1 + ext_ratio) * r;
+		int max_level = 2* max_d / avg_length ;
 
-		//Eigen::VectorXi flag = Eigen::VectorXi::Constant(_v.cols(), 0);
-		//std::queue<std::pair<int, int>> que;
-		//que.push({ _source_v,0 });
-		//
-		//while (!que.empty()) {
-		//	int u = que.front().first;
-		//	int l = que.front().second;
-		//	que.pop();
-		//	for (auto v : _v_v[u]) {
-		//		if (flag[v] == 0 && l < max_level &&
-		//			common::point_line_distance(_v.col(v),
-		//				_v.col(_source_v), _v.col(_source_v) + _direction) < max_d) {
-		//			que.push({ v,l +1 });
-		//		}
-		//	}
-		//}
+		Eigen::VectorXi flag = Eigen::VectorXi::Constant(_v.cols(), 0);
+		std::queue<std::pair<int, int>> que;
+		que.push({ sv,0 });
+		
+		while (!que.empty()) {
+			int u = que.front().first;
+			int l = que.front().second;
+			que.pop();
+			flag[u] = 1;
+			for (auto v : _v_v[u]) {
+				if (flag[v] == 0 && l < max_level &&
+					common::point_line_distance(_v.col(v),_v.col(sv),_v.col(sv)+ dir)<max_d) {
+					que.push({ v,l +1 });
+				}
+			}
+		}
+
+		for (int i = 0; i < _f.cols(); ++i) {
+			if (flag[_f(0, i)] || flag[_f(1, i)] || flag[_f(2, i)]) {
+				faces.push_back(i);
+			}
+		}
 
 		return 1;
 	}
@@ -302,7 +307,7 @@ namespace alg {
 		Eigen::Matrix3Xi& lf,
 		std::vector<int>& l2g)
 	{
-		Eigen::VectorXi flag = Eigen::VectorXi::Constant(_v.cols(), 1, 0);
+		Eigen::VectorXi flag = Eigen::VectorXi::Constant(_v.cols(), 0);
 
 		for (int i = 0; i < _geo_r_l2g.size(); ++i) {
 			flag[_geo_r_l2g[i]] = 1;
@@ -315,13 +320,15 @@ namespace alg {
 		for (const auto& i : inner_bnd) {
 			que.push({ _geo_r_l2g[i],0 });
 		}
+
+		int max_level = 2 * _ext_ratio * _geo_radius / _target_length;
 		while (!que.empty()) {
 			int i = que.front().first;
 			int level = que.front().second;
 			que.pop();
 			flag[i] = 1;
-			for (auto j : _v_v[i]) {
-				if (flag[j] == 0 && level < 3 &&
+			for (const auto& j : _v_v[i]) {
+				if (flag[j] == 0 && level < max_level &&
 					common::point_line_distance(_v.col(j), _v.col(_source_v),
 						_v.col(_source_v) + _direction) < (1 + _ext_ratio) * _geo_radius)
 				{
@@ -344,7 +351,7 @@ namespace alg {
 		faces.reserve(lv.cols() / 3);
 
 		for (int i = 0; i < _f.cols(); ++i) {
-			if (flag[_f(0, i)] || flag[_f(1, i)] || flag[_f(2, i)]) {
+			if (flag[_f(0, i)] && flag[_f(1, i)] && flag[_f(2, i)]) {
 				faces.push_back(_f(0, i));
 				faces.push_back(_f(1, i));
 				faces.push_back(_f(2, i));
@@ -381,34 +388,34 @@ namespace alg {
 	{
 		laplace = (L * lv.transpose()).transpose();
 
-		//Eigen::VectorXi bnd;
-		//igl::boundary_loop(lf.transpose(), bnd);
+		Eigen::VectorXi bnd;
+		igl::boundary_loop(lf.transpose(), bnd);
 
-		//int num_v = lv.cols(), num_iv = _geo_r_lv.cols();
-		//std::vector<bool> fix(num_v, false);
-		//for (int i = 0; i < num_iv; ++i) {
-		//	laplace.col(l2l[i]) = limit_lap.col(i);
-		//	fix[l2l[i]] = true;
-		//}
-		//for (const auto& i : bnd) {
-		//	fix[i] = true;
-		//}
+		int num_v = lv.cols(), num_iv = _geo_r_lv.cols();
+		std::vector<bool> fix(num_v, false);
+		for (int i = 0; i < num_iv; ++i) {
+			laplace.col(l2l[i]) = limit_lap.col(i);
+			fix[l2l[i]] = true;
+		}
+		for (const auto& i : bnd) {
+			fix[i] = true;
+		}
 
-		//std::vector<std::vector<int>> v_v;
-		//common::vertex_vertex_adjacency(lf, v_v);
+		std::vector<std::vector<int>> v_v;
+		common::vertex_vertex_adjacency(lf, v_v);
 
-		//int nb_iter = 10;
-		//for (int m = 0; m < nb_iter; ++m) {
-		//	for (int i = 0; i < num_v; ++i) {
-		//		if (fix[i])continue;
-		//		Eigen::Vector3d nerb_lap = Eigen::Vector3d::Zero();
-		//		for (auto j : v_v[i]) {
-		//			nerb_lap += laplace.col(j);
-		//		}
-		//		nerb_lap /= v_v[i].size();
-		//		laplace.col(i) = 1. / 2 * laplace.col(i) + 1. / 2 * nerb_lap;
-		//	}
-		//}
+		int nb_iter = 10;
+		for (int m = 0; m < nb_iter; ++m) {
+			for (int i = 0; i < num_v; ++i) {
+				if (fix[i])continue;
+				Eigen::Vector3d nerb_lap = Eigen::Vector3d::Zero();
+				for (auto j : v_v[i]) {
+					nerb_lap += laplace.col(j);
+				}
+				nerb_lap /= v_v[i].size();
+				laplace.col(i) = 1. / 2 * laplace.col(i) + 1. / 2 * nerb_lap;
+			}
+		}
 		return 1;
 	}
 
@@ -473,8 +480,8 @@ namespace alg {
 		}
 		A3.setFromTriplets(triple.begin(), triple.end());
 
-		A = A1.transpose() * A1 + A2.transpose() * A2 + 1e2 * A3.transpose() * A3;
-		b = A1.transpose() * b1 + A2.transpose() * b2 + 1e2 * A3.transpose() * b3;
+		A =  A1.transpose() * A1 +  A2.transpose() * A2 +  A3.transpose() * A3;
+		b =  A1.transpose() * b1 +  A2.transpose() * b2 +  A3.transpose() * b3;
 		return 1;
 	}
 }
